@@ -7,9 +7,9 @@ from beets.plugins import BeetsPlugin
 from beets.ui import Subcommand
 
 
-class BeetsDownloadPlugin(BeetsPlugin):
+class BeetsYdlPlugin(BeetsPlugin):
     def __init__(self):
-        super(BeetsDownloadPlugin, self).__init__()
+        super(BeetsYdlPlugin, self).__init__()
         self._config = {
             'verbose': False,
             'youtubedl_options': {
@@ -39,11 +39,11 @@ class BeetsDownloadPlugin(BeetsPlugin):
         self.config = self._config
 
     def commands(self):
-        def download_func(lib, opts, args):
+        def ydl_func(lib, opts, args):
             for opt, value in opts.__dict__.items():
                 self.config[opt] = value
             for arg in args:
-                self.download(lib, opts, arg)
+                self.run_ydl(lib, opts, arg)
 
         parser = OptionParser()
         parser.add_option("--no-import",
@@ -69,16 +69,16 @@ class BeetsDownloadPlugin(BeetsPlugin):
                           dest="verbose",
                           default=False,
                           help="print processing information")
-        download_command = Subcommand("download",
-                                      parser=parser,
-                                      help="download music from YouTube")
-        download_command.func = download_func
-        return [download_command]
+        ydl_command = Subcommand("ydl",
+                                 parser=parser,
+                                 help="download music from YouTube")
+        ydl_command.func = ydl_func
+        return [ydl_command]
 
-    def download(self, lib, opts, arg):
-        """Run `download` command."""
+    def run_ydl(self, lib, opts, arg):
+        """Run `ydl` command."""
         if self.config.get("verbose"):
-            print("[download] Downloading: " + arg)
+            print("[ydl] Downloading: " + arg)
         youtubedl_config = self.config.get("youtubedl_options")
         youtubedl_config["nooverwrites"] = not self.config.get(
             "force_download")
@@ -107,7 +107,7 @@ class BeetsDownloadPlugin(BeetsPlugin):
     def parse_title(self, title):
         """Parse artist and song from title."""
         if self.config.get("verbose"):
-            print("[download] Parsing title: `%s`" % title)
+            print("[ydl] Parsing title: `%s`" % title)
         regex = re.compile(
             r"""^([^-~|*%#:_'"`]*)[-~|*%#:_]?\s*(?P<quote>['"`]?)(.*)(?P=quote)"""
         )
@@ -119,7 +119,7 @@ class BeetsDownloadPlugin(BeetsPlugin):
     def write_tags(self, filename, artist, song):
         """Write tags to audio file."""
         if self.config.get("verbose"):
-            print("[download] Writing tags: %s - %s" % (artist, song))
+            print("[ydl] Writing tags: %s - %s" % (artist, song))
         file_info = mutagen.File(filename)
         file_info["artist"] = artist
         file_info["title"] = song
@@ -128,7 +128,7 @@ class BeetsDownloadPlugin(BeetsPlugin):
     def beets_import(self, filename):
         """Import `filename` to beets."""
         if self.config.get("verbose"):
-            print("[download] Importing: " + filename)
+            print("[ydl] Importing: " + filename)
         command = ["beet"]
         if self.config.get("verbose"):
             command.extend(["-v"])
@@ -139,5 +139,5 @@ class BeetsDownloadPlugin(BeetsPlugin):
             command.extend(["-m"])
         command.extend([filename])
         if self.config.get("verbose"):
-            print("[download] Running: %s" % command)
+            print("[ydl] Running: %s" % command)
         subprocess.run(command)
