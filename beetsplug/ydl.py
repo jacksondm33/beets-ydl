@@ -1,47 +1,38 @@
+import mutagen
 import re
 import subprocess
 from optparse import OptionParser
-import mutagen
 from yt_dlp import YoutubeDL
 from beets.plugins import BeetsPlugin
 from beets.ui import Subcommand
 
 
 class BeetsYdlPlugin(BeetsPlugin):
+
     def __init__(self):
         super(BeetsYdlPlugin, self).__init__()
-        self._config = {
+        self.config.add({
             'verbose': False,
-            'youtubedl_options': {
-                'verbose':
-                False,
-                'keepvideo':
-                False,
-                'outtmpl':
-                self.config.get("cachedir") + "/%(id)s.%(ext)s",
-                'restrictfilenames':
-                True,
-                'nooverwrites':
-                True,
-                'quiet':
-                True,
-                "format":
-                "bestaudio[acodec=opus]/best[acodec=opus]",
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "opus",
-                    "preferredquality": "192",
-                    'nopostoverwrites': True
+            'cachedir': 'ydl',
+            'outtmpl': '%(id)s.%(ext)s',
+            'youtubedl_config': {
+                'verbose': False,
+                'keepvideo': False,
+                'restrictfilenames': True,
+                'quiet': True,
+                'format': 'bestaudio[acodec=opus]/best[acodec=opus]',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'opus',
+                    'preferredquality': '192'
                 }]
             }
-        }
-        self._config.update(self.config)
-        self.config = self._config
+        })
 
     def commands(self):
+
         def ydl_func(lib, opts, args):
-            for opt, value in opts.__dict__.items():
-                self.config[opt] = value
+            self.config.set_args(opts)
             for arg in args:
                 self.run_ydl(lib, opts, arg)
 
@@ -73,29 +64,29 @@ class BeetsYdlPlugin(BeetsPlugin):
                                  parser=parser,
                                  help="download music from YouTube")
         ydl_command.func = ydl_func
+
         return [ydl_command]
 
     def run_ydl(self, lib, opts, arg):
         """Run `ydl` command."""
-        if self.config.get("verbose"):
+        if self.config["verbose"].get():
             print("[ydl] Downloading: " + arg)
-        youtubedl_config = self.config.get("youtubedl_options")
-        youtubedl_config["nooverwrites"] = not self.config.get(
-            "force_download")
-        youtubedl_config["postprocessors"][0][
-            "nopostoverwrites"] = not self.config.get("force_download")
+        youtubedl_config = self.config["youtubedl_config"].get()
+        youtubedl_config["outtmpl"] = self.config["cachedir"].as_filename() + '/' + self.config["outtmpl"].get()
+        youtubedl_config["nooverwrites"] = not self.config["force_download"].get()
+        youtubedl_config["postprocessors"][0]["nopostoverwrites"] = not self.config["force_download"].get()
         ydl = YoutubeDL(youtubedl_config)
         info = ydl.sanitize_info(ydl.extract_info(arg))
         if ("artist" in info) and ("track" in info):
             artist, song = (info["artist"], info["track"])
         else:
-            artist, song = self.parse_title(info.get("title"))
-        filename = youtubedl_config.get("outtmpl") % {
-            "id": info.get("id"),
+            artist, song = self.parse_title(info["title"])
+        filename = youtubedl_config["outtmpl"]["default"] % {
+            "id": info["id"],
             "ext": youtubedl_config["postprocessors"][0]["preferredcodec"]
         }
         self.write_tags(filename, artist, song)
-        if self.config.get("import"):
+        if self.config["import"].get():
             self.beets_import(filename)
 
     def clean_str(self, s):
@@ -106,7 +97,7 @@ class BeetsYdlPlugin(BeetsPlugin):
 
     def parse_title(self, title):
         """Parse artist and song from title."""
-        if self.config.get("verbose"):
+        if self.config["verbose"].get():
             print("[ydl] Parsing title: `%s`" % title)
         regex = re.compile(
             r"""^([^-~|*%#:_'"`]*)[-~|*%#:_]?\s*(?P<quote>['"`]?)(.*)(?P=quote)"""
@@ -118,7 +109,7 @@ class BeetsYdlPlugin(BeetsPlugin):
 
     def write_tags(self, filename, artist, song):
         """Write tags to audio file."""
-        if self.config.get("verbose"):
+        if self.config["verbose"].get():
             print("[ydl] Writing tags: %s - %s" % (artist, song))
         file_info = mutagen.File(filename)
         file_info["artist"] = artist
@@ -127,17 +118,17 @@ class BeetsYdlPlugin(BeetsPlugin):
 
     def beets_import(self, filename):
         """Import `filename` to beets."""
-        if self.config.get("verbose"):
+        if self.config["verbose"].get():
             print("[ydl] Importing: " + filename)
         command = ["beet"]
-        if self.config.get("verbose"):
+        if self.config["verbose"].get():
             command.extend(["-v"])
         command.extend(["import", "-s"])
-        if self.config.get("keep_files"):
+        if self.config["keep_files"].get():
             command.extend(["-c"])
         else:
             command.extend(["-m"])
         command.extend([filename])
-        if self.config.get("verbose"):
+        if self.config["verbose"].get():
             print("[ydl] Running: %s" % command)
         subprocess.run(command)
