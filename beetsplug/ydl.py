@@ -2,6 +2,7 @@ import logging
 import mutagen
 import re
 import subprocess
+import urllib
 from optparse import OptionParser
 from yt_dlp import YoutubeDL
 from beets.plugins import BeetsPlugin
@@ -18,7 +19,7 @@ class BeetsYdlPlugin(BeetsPlugin):
                 "verbose": False,
                 "cachedir": "ydl",
                 "outtmpl": "%(id)s.%(ext)s",
-                "ym_search_format": "https://music.youtube.com/search?q={artist}+{song}#songs",
+                "ym_search_format": "https://music.youtube.com/search?q={artist}+-+{song}#songs",
                 "youtubedl_config": {
                     "verbose": False,
                     "keepvideo": False,
@@ -51,8 +52,17 @@ class BeetsYdlPlugin(BeetsPlugin):
             self.config.set_args(opts)
             urls = []
             for arg in args:
-                urls += self.get_ym_urls(arg)
+                urls += [self.get_ym_url(artist, song) for artist, song, _ in self.get_url_info(arg)]
             return self.run_ydl(urls)
+
+        def ymalbum_func(lib, opts, args):
+            self.config.set_args(opts)
+            for item in lib.items(args):
+                artist, song, album = self.get_url_info(self.get_ym_url(item["artist"], item["title"]), allow_playlists=False)[0]
+                if artist.lower() != item["artist"].lower() or song.lower() != item["title"].lower():
+                    logger.warning("Mismatch: %s - %s  =>  %s - %s" % (item["artist"], item["title"], artist, song))
+                print("Found: %s - %s (%s)" % (artist, song, album))
+                self.write_tags(item.filepath, album, item["artist"], item["title"])
 
         parser = OptionParser()
         parser.add_option(
@@ -99,10 +109,14 @@ class BeetsYdlPlugin(BeetsPlugin):
         ymdl_command = Subcommand(
             "ymdl", parser=parser, help="download music from YouTube Music"
         )
+        ymalbum_command = Subcommand(
+            "ymalbum", parser=parser, help="get album info from YouTube Music"
+        )
         ydl_command.func = ydl_func
         ymdl_command.func = ymdl_func
+        ymalbum_command.func = ymalbum_func
 
-        return [ydl_command, ymdl_command]
+        return [ydl_command, ymdl_command, ymalbum_command]
 
     def run_ydl(self, args):
         """Run `ydl` command."""
@@ -112,13 +126,15 @@ class BeetsYdlPlugin(BeetsPlugin):
         if self.config["import"].get():
             self.beets_import([self.config["cachedir"].as_filename()])
 
-    def get_ym_urls(self, url):
+    def get_url_info(self, url, allow_playlists=True):
         """Get YouTube Music url(s) from the given url."""
         logger.debug("Downloading info: " + url)
         youtubedl_config = self.config["youtubedl_info_config"].get()
+        if not allow_playlists:
+            youtubedl_config["playlist_items"] = "1"
         ydl = YoutubeDL(youtubedl_config)
         info = ydl.sanitize_info(ydl.extract_info(url))
-        ym_urls = []
+        infos = []
         if "entries" not in info:
             info = {"entries": [info]}
         for entry in info["entries"]:
@@ -126,15 +142,9 @@ class BeetsYdlPlugin(BeetsPlugin):
                 artist, song = (", ".join(entry["artists"]), entry["track"])
             else:
                 artist, song = self.parse_title(entry["title"])
-            # album = entry["album"] if "album" in entry else ""
-            artist_urlified = "+".join(artist.split())
-            song_urlified = "+".join(song.split())
-            ym_urls.append(
-                self.config["ym_search_format"]
-                .get()
-                .format(artist=artist_urlified, song=song_urlified)
-            )
-        return ym_urls
+            album = entry.get("album", "")
+            infos.append((artist, song, album))
+        return infos
 
     def download_url(self, url):
         """Download a song from url."""
@@ -187,6 +197,11 @@ class BeetsYdlPlugin(BeetsPlugin):
         # TODO: Implement properly
         artist, song = self.parse_title(title)
         return ("", artist, song)
+
+    def get_ym_url(self, artist, song):
+        artist_urlified = urllib.parse.quote_plus(artist)
+        song_urlified = urllib.parse.quote_plus(song)
+        return self.config["ym_search_format"].get().format(artist=artist_urlified, song=song_urlified)
 
     def write_tags(self, filename, album, artist, song):
         """Write tags to audio file."""
