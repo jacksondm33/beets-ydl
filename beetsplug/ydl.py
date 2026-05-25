@@ -210,6 +210,7 @@ class BeetsYdlPlugin(BeetsPlugin):
         file_info["album"] = album
         file_info["artist"] = artist
         file_info["title"] = song
+        file_info["media"] = "Digital Media"
         file_info.save()
 
     def beets_import(self, filenames):
